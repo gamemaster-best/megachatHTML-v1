@@ -1,0 +1,827 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portable Blocky World 3D - Google Auth</title>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        /* ... (General styles) ... */
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #333;
+            color: white;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        #game-canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            padding: 15px;
+            background-color: rgba(0, 0, 0, 0.5);
+            border-radius: 10px;
+            border: 2px solid #555;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            z-index: 10;
+        }
+
+        h1 {
+            font-size: 1.5rem;
+            margin: 0 0 10px 0;
+            color: #00ff00;
+            text-shadow: 2px 2px #000;
+        }
+
+        p {
+            font-size: 0.8rem;
+            margin: 5px 0;
+            line-height: 1.4;
+        }
+
+        .status-message {
+            font-weight: bold;
+            margin-top: 5px;
+        }
+
+        /* Login Button Styling */
+        #auth-button {
+            background-color: #4285F4; /* Google Blue */
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 0.7rem;
+            cursor: pointer;
+            transition: background-color 0.1s;
+            box-shadow: 0 3px #3367D6;
+            margin-top: 10px;
+        }
+
+            #auth-button:hover {
+                background-color: #3367D6;
+            }
+
+            #auth-button:active {
+                box-shadow: 0 1px #3367D6;
+                transform: translateY(2px);
+            }
+
+        /* Mobile Adjustments */
+        #touch-controls {
+            display: none;
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            right: 20px;
+            user-select: none;
+            -webkit-user-select: none;
+            z-index: 10;
+        }
+
+        #joystick {
+            position: absolute;
+            left: 50px;
+            bottom: 50px;
+            width: 100px;
+            height: 100px;
+            background: rgba(100, 100, 100, 0.4);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+        }
+
+        #joystick-knob {
+            position: absolute;
+            left: 25px;
+            top: 25px;
+            width: 50px;
+            height: 50px;
+            background: rgba(255, 255, 255, 0.6);
+            border-radius: 50%;
+        }
+
+        #jump-button {
+            position: absolute;
+            right: 50px;
+            bottom: 50px;
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 255, 0, 0.5);
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            color: white;
+            text-shadow: 1px 1px #000;
+        }
+
+        @media (pointer: coarse) {
+            #touch-controls {
+                display: block;
+            }
+
+            #ui-container {
+                font-size: 0.8rem;
+                padding: 10px;
+            }
+
+            h1 {
+                font-size: 1.2rem;
+            }
+
+            p {
+                font-size: 0.7rem;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- UI Overlay -->
+    <div id="ui-container">
+        <h1>Blocky World</h1>
+        <p>Status: <span class="status-message" id="connection-status" style="color:#ffc107;">Connecting...</span></p>
+        <p>Your ID: <span id="user-id">Not Signed In</span></p>
+        <p>Active Players: <span id="active-players">0</span></p>
+
+        <button id="auth-button">Sign In with Google</button>
+
+        <hr style="margin: 10px 0; border: 0; border-top: 1px solid #555;">
+        <p>WASD / Joystick: Move</p>
+        <p>Space / Jump: Jump</p>
+        <p>Mouse: Look</p>
+    </div>
+
+    <!-- 3D Game Canvas -->
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Mobile Touch Controls -->
+    <div id="touch-controls">
+        <div id="joystick">
+            <div id="joystick-knob"></div>
+        </div>
+        <div id="jump-button">JUMP</div>
+    </div>
+
+    <!-- Import three.js, Firebase, and OrbitControls -->
+    <script type="module">
+        import * as THREE from 'https://cdn.skypack.dev/three@0.136';
+        import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
+
+        // --- FIREBASE IMPORTS ---
+        import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js';
+        import { getAuth, GoogleAuthProvider, signInWithPopup, onAuthStateChanged, signOut } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js';
+        import { getFirestore, doc, onSnapshot, collection, setDoc, deleteDoc, setLogLevel, getDoc, serverTimestamp, query, where } from 'https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js';
+
+
+        // =========================================================================
+        // === CRITICAL STEP FOR PORTABILITY: PASTE YOUR OWN CONFIG HERE ===
+        // =========================================================================
+        const PORTABLE_FIREBASE_CONFIG = {
+            // !!! YOUR CONFIGURATION IS NOW INSERTED BELOW !!!
+            apiKey: "AIzaSyCVwSQfdVkIuWaWCgSAr0HPm0Ru3iNUGo4",
+            authDomain: "webblox-7b049.firebaseapp.com",
+            projectId: "webblox-7b049",
+            storageBucket: "webblox-7b049.firebasestorage.app",
+            messagingSenderId: "534764026840",
+            appId: "1:534764026840:web:063944fd9621f7f56350ad",
+        };
+        const PORTABLE_APP_ID = "RobloxCloneGame";
+        // =========================================================================
+
+
+        // --- Core Setup ---
+        let scene, camera, renderer, controls;
+        let clock = new THREE.Clock();
+        let canvas;
+
+        // --- Game Objects ---
+        let player;
+        let worldObjects = [];
+
+        // --- Firebase Globals ---
+        let db, auth;
+        let userId = null;
+        let multiplayerInitialized = false;
+        const remotePlayers = new Map();
+        let updateInterval;
+        const PLAYER_UPDATE_INTERVAL = 50;
+        const PLAYER_TIMEOUT_MS = 15000;
+
+        // --- Player State ---
+        const playerSize = { width: 0.8, height: 1.8, depth: 0.5 };
+        const playerPhysics = {
+            velocity: new THREE.Vector3(),
+            onGround: false,
+            gravity: -30,
+            jumpForce: 12,
+            playerHalfHeight: playerSize.height / 2,
+        };
+
+        // --- Input State ---
+        const keys = { w: false, a: false, s: false, d: false, space: false };
+        const touchState = { forward: 0, strafe: 0, jump: false };
+
+        window.onload = init;
+
+        function init() {
+            canvas = document.getElementById('game-canvas');
+            if (!canvas) {
+                console.error("Canvas element 'game-canvas' not found. Cannot initialize 3D scene.");
+                return;
+            }
+
+            // --- 1. Setup Three.js ---
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x87CEEB);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(10, 20, 5);
+            directionalLight.castShadow = true;
+            directionalLight.shadow.mapSize.width = 1024;
+            directionalLight.shadow.mapSize.height = 1024;
+            directionalLight.shadow.camera.left = -20;
+            directionalLight.shadow.camera.right = 20;
+            directionalLight.shadow.camera.top = 20;
+            directionalLight.shadow.camera.bottom = -20;
+            scene.add(directionalLight);
+
+            // Create World and Player
+            createWorld();
+            player = createPlayer(0x0077FF);
+            player.position.y = playerPhysics.playerHalfHeight;
+            scene.add(player);
+
+            // Controls (Initial setup)
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true; controls.dampingFactor = 0.05;
+            controls.screenSpacePanning = false; controls.minDistance = 3; controls.maxDistance = 20;
+            controls.maxPolarAngle = Math.PI / 2 - 0.05;
+            camera.position.set(0, 4, 6);
+            controls.target.copy(player.position);
+            controls.update();
+
+            // Event Listeners
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('keydown', (e) => onKey(e, true));
+            document.addEventListener('keyup', (e) => onKey(e, false));
+            setupTouchControls();
+
+            // Initialize Firebase and Auth Listener
+            initFirebase();
+
+            // Start Game Loop
+            animate();
+        }
+
+        // --- FIREBASE & MULTIPLAYER ---
+        function initFirebase() {
+            const statusElement = document.getElementById('connection-status');
+            const userIdElement = document.getElementById('user-id');
+            const authButton = document.getElementById('auth-button');
+
+            if (PORTABLE_FIREBASE_CONFIG.apiKey === "YOUR_API_KEY_HERE") {
+                statusElement.textContent = "Multiplayer Disabled: Paste Config!";
+                statusElement.style.color = '#f00';
+                authButton.disabled = true;
+                return;
+            }
+
+            const app = initializeApp(PORTABLE_FIREBASE_CONFIG);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            setLogLevel('error');
+
+            // 1. Setup Auth Listener
+            onAuthStateChanged(auth, (user) => {
+                if (user) {
+                    // User is signed in
+                    userId = user.uid;
+                    // Prefer displaying the email prefix if available, otherwise show truncated UID
+                    userIdElement.textContent = user.email ? user.email.split('@')[0] : userId.substring(0, 8) + '...';
+                    authButton.textContent = "Sign Out";
+                    authButton.onclick = handleSignOut;
+                    statusElement.textContent = "Connected & Signed In";
+                    statusElement.style.color = '#0f0';
+
+                    if (!multiplayerInitialized) {
+                        setupMultiplayer(userId, PORTABLE_APP_ID);
+                        multiplayerInitialized = true;
+                    }
+                } else {
+                    // User is signed out
+                    userId = null;
+                    userIdElement.textContent = "Not Signed In";
+                    authButton.textContent = "Sign In with Google";
+                    authButton.onclick = handleGoogleSignIn;
+                    statusElement.textContent = "Disconnected (Sign In)";
+                    statusElement.style.color = '#ffc107';
+
+                    // Clear any previous multiplayer state
+                    if (updateInterval) clearInterval(updateInterval);
+                    remotePlayers.forEach(p => scene.remove(p.mesh));
+                    remotePlayers.clear();
+                    document.getElementById('active-players').textContent = 0;
+                    multiplayerInitialized = false;
+                }
+            });
+
+            // 2. Attach Google Sign-In handler
+            authButton.onclick = handleGoogleSignIn; // Default assignment, overridden in onAuthStateChanged
+        }
+
+        function handleGoogleSignIn() {
+            const statusElement = document.getElementById('connection-status');
+            const provider = new GoogleAuthProvider();
+            signInWithPopup(auth, provider)
+                .then((result) => {
+                    // Sign-in successful. onAuthStateChanged handles the rest.
+                    console.log("Google Sign-in successful:", result.user.email);
+                })
+                .catch((error) => {
+                    // IMPROVED: Display the specific error code for debugging
+                    console.error("Google Sign-in failed:", error.code, error.message);
+                    statusElement.textContent = `AUTH FAILED: ${error.code.toUpperCase().replace('AUTH/', '')}`;
+                    statusElement.style.color = '#f00';
+                });
+        }
+
+        function handleSignOut() {
+             if (userId) {
+                // Manually delete player data before signing out
+                const playerDocRef = doc(db, 'artifacts', PORTABLE_APP_ID, 'public', 'data', 'players', userId);
+                deleteDoc(playerDocRef).then(() => {
+                    console.log("Player data cleaned up.");
+                }).catch(e => {
+                    console.error("Failed to clean up player data:", e);
+                });
+            }
+            signOut(auth).then(() => {
+                console.log("User signed out.");
+            }).catch((error) => {
+                console.error("Sign-out error:", error);
+            });
+        }
+
+        function setupMultiplayer(currentUserId, appId) {
+            const playerDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'players', currentUserId);
+            const activePlayersElement = document.getElementById('active-players');
+
+            // --- 0. Load Current Player's Initial Position ---
+            getDoc(playerDocRef).then(docSnap => {
+                const defaultSpawnY = playerPhysics.playerHalfHeight;
+                const defaultSpawn = new THREE.Vector3(0, defaultSpawnY, 0);
+
+                if (docSnap.exists() && docSnap.data().py !== undefined) {
+                    const data = docSnap.data();
+                    player.position.set(data.px, data.py, data.pz);
+                    player.rotation.set(data.rx, data.ry, data.rz);
+                } else {
+                    player.position.copy(defaultSpawn);
+                }
+
+                controls.target.copy(player.position);
+                controls.update();
+
+                // 1. Setup real-time listener for ALL other players (with Heartbeat check)
+                const q = collection(db, 'artifacts', appId, 'public', 'data', 'players');
+                onSnapshot(q, (snapshot) => {
+                    let activeCount = 0;
+                    const now = Date.now();
+                    const livePlayerIds = new Set();
+
+                    snapshot.docChanges().forEach((change) => {
+                        const id = change.doc.id;
+                        const data = change.doc.data();
+
+                        if (id === currentUserId) return;
+
+                        // Check Heartbeat (timestamp must be within the timeout window)
+                        const lastSeen = data.timestamp?.toMillis ? data.timestamp.toMillis() : data.timestamp || now;
+                        const isAlive = (now - lastSeen) < PLAYER_TIMEOUT_MS;
+
+                        if (isAlive) {
+                            livePlayerIds.add(id);
+                            activeCount++;
+                            if (!remotePlayers.has(id)) {
+                                const remotePlayer = createPlayer(0xFF0000);
+                                scene.add(remotePlayer);
+                                remotePlayers.set(id, { mesh: remotePlayer, data: data });
+                            }
+                            // Update position
+                            const remotePlayer = remotePlayers.get(id);
+                            remotePlayer.mesh.position.set(data.px, data.py, data.pz);
+                            remotePlayer.mesh.rotation.set(data.rx, data.ry, data.rz);
+                            remotePlayer.data = data;
+
+                        } else if (remotePlayers.has(id)) {
+                            // Player is dead/timed out - remove them
+                            const remotePlayer = remotePlayers.get(id);
+                            scene.remove(remotePlayer.mesh);
+                            remotePlayers.delete(id);
+                        }
+                    });
+
+                    // Final cleanup (removes players who timed out since the last change)
+                    const playersToRemove = [];
+                    remotePlayers.forEach((value, id) => {
+                        if (!livePlayerIds.has(id)) {
+                             playersToRemove.push(id);
+                        }
+                    });
+
+                    playersToRemove.forEach(id => {
+                        const remotePlayer = remotePlayers.get(id);
+                        scene.remove(remotePlayer.mesh);
+                        remotePlayers.delete(id);
+                    });
+
+                    // Update UI count
+                    activePlayersElement.textContent = remotePlayers.size + 1;
+
+
+                }, (error) => {
+                    console.error("Error listening to players:", error);
+                    document.getElementById('connection-status').textContent = "DISCONNECTED";
+                    document.getElementById('connection-status').style.color = '#f00';
+                });
+
+                // 2. Setup periodic updater for THIS player (Heartbeat)
+                updateInterval = setInterval(() => {
+                    if (player) {
+                        const playerData = {
+                            px: player.position.x,
+                            py: player.position.y,
+                            pz: player.position.z,
+                            rx: player.rotation.x,
+                            ry: player.rotation.y,
+                            rz: player.rotation.z,
+                            timestamp: serverTimestamp()
+                        };
+                        setDoc(playerDocRef, playerData, { merge: true }).catch(e => {
+                            console.error("Failed to update player position:", e);
+                            document.getElementById('connection-status').textContent = "DISCONNECTED (Heartbeat Fail)";
+                            document.getElementById('connection-status').style.color = '#f00';
+                        });
+                    }
+                }, PLAYER_UPDATE_INTERVAL);
+
+                // 3. Clean up on window close/unload
+                window.addEventListener('beforeunload', () => {
+                    clearInterval(updateInterval);
+                    deleteDoc(playerDocRef);
+                });
+
+
+            }).catch(error => {
+                console.error("Failed to load initial player data:", error);
+                document.getElementById('connection-status').textContent = "Data Error";
+                document.getElementById('connection-status').style.color = '#f00';
+            });
+        }
+
+        // --- GAME OBJECTS & LOGIC (UNCHANGED) ---
+
+        function createWorld() {
+            // Baseplate
+            const baseplateGeo = new THREE.BoxGeometry(40, 1, 40);
+            const baseplateMat = new THREE.MeshStandardMaterial({ color: 0x00af00, roughness: 0.8 });
+            const baseplate = new THREE.Mesh(baseplateGeo, baseplateMat);
+            baseplate.position.y = -0.5;
+            baseplate.receiveShadow = true;
+            baseplate.name = "baseplate";
+            scene.add(baseplate);
+            worldObjects.push(baseplate);
+
+            // --- Obstacle Course ---
+            const platformMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+
+            // Start Platform (P1)
+            addBlock(10, 1, 10, 0, 0.5, 0, platformMat);
+
+            // Path 1 (Ramp up)
+            addBlock(4, 1, 4, 7, 1.5, -4, platformMat);
+            addBlock(2, 2, 2, 10, 2, -6, platformMat);
+
+            // High Jump 1 (P4)
+            addBlock(2, 0.5, 2, 12, 3.25, -6, platformMat);
+
+            // Gap Jump 1 (P5)
+            addBlock(2, 0.5, 2, 16, 2.75, -6, platformMat);
+
+            // Bridge (P6)
+            addBlock(1, 0.5, 8, 18, 2.75, -2, platformMat);
+
+            // Step Stairs Up (P7, P8, P9)
+            addBlock(2, 1, 2, 18, 3.5, 4, platformMat);
+            addBlock(2, 1.5, 2, 18, 4.25, 6, platformMat);
+            addBlock(2, 2, 2, 18, 5, 8, platformMat);
+
+            // End Platform (P10)
+            addBlock(8, 0.5, 8, 12, 5.25, 8, new THREE.MeshStandardMaterial({ color: 0xFFA500 }));
+        }
+
+        function addBlock(w, h, d, x, y, z, mat) {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+            mesh.position.set(x, y, z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.name = `platform_${worldObjects.length}`;
+            scene.add(mesh);
+            worldObjects.push(mesh);
+        }
+
+        function createPlayer(color) {
+            const playerGroup = new THREE.Group();
+
+            const headMat = new THREE.MeshStandardMaterial({ color: 0xFFE0BD });
+            const torsoMat = new THREE.MeshStandardMaterial({ color: color });
+            const limbsMat = new THREE.MeshStandardMaterial({ color: 0x444444 });
+
+            // Torso (Y-center is 0.5 below group center)
+            const torso = new THREE.Mesh(new THREE.BoxGeometry(playerSize.width, 1, playerSize.depth), torsoMat);
+            torso.position.y = 0.0; torso.castShadow = true;
+            playerGroup.add(torso);
+
+            // Head
+            const head = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), headMat);
+            head.position.y = 0.75; head.castShadow = true;
+            playerGroup.add(head);
+
+            // Arms
+            const armGeo = new THREE.BoxGeometry(0.25, 0.8, 0.25);
+            const leftArm = new THREE.Mesh(armGeo, limbsMat);
+            leftArm.position.set(-playerSize.width / 2 - 0.15, 0, 0); leftArm.castShadow = true;
+            playerGroup.add(leftArm);
+
+            const rightArm = new THREE.Mesh(armGeo, limbsMat);
+            rightArm.position.set(playerSize.width / 2 + 0.15, 0, 0); rightArm.castShadow = true;
+            playerGroup.add(rightArm);
+
+            // Legs
+            const legGeo = new THREE.BoxGeometry(0.3, 0.8, 0.3);
+            const leftLeg = new THREE.Mesh(legGeo, limbsMat);
+            leftLeg.position.set(-playerSize.width / 4, -0.9, 0); leftLeg.castShadow = true;
+            playerGroup.add(leftLeg);
+
+            const rightLeg = new THREE.Mesh(legGeo, limbsMat);
+            rightLeg.position.set(playerSize.width / 4, -0.9, 0); rightLeg.castShadow = true;
+            playerGroup.add(rightLeg);
+
+            playerGroup.position.y = playerPhysics.playerHalfHeight; // Center the group so feet are at Y=0
+
+            return playerGroup;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function onKey(event, isDown) {
+            switch (event.code) {
+                case 'KeyW': case 'ArrowUp': keys.w = isDown; break;
+                case 'KeyA': case 'ArrowLeft': keys.a = isDown; break;
+                case 'KeyS': case 'ArrowDown': keys.s = isDown; break;
+                case 'KeyD': case 'ArrowRight': keys.d = isDown; break;
+                case 'Space': keys.space = isDown; break;
+            }
+        }
+
+        function setupTouchControls() {
+            const joystick = document.getElementById('joystick');
+            const knob = document.getElementById('joystick-knob');
+            const jumpButton = document.getElementById('jump-button');
+
+            if (!joystick || !knob || !jumpButton) return;
+
+            let joystickBase = joystick.getBoundingClientRect();
+            let radius = joystickBase.width / 2;
+            let center = { x: joystickBase.left + radius, y: joystickBase.top + radius };
+
+            joystick.addEventListener('touchstart', handleJoystickStart, { passive: false });
+            joystick.addEventListener('touchmove', handleJoystickMove, { passive: false });
+            joystick.addEventListener('touchend', handleJoystickEnd);
+
+
+            jumpButton.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                touchState.jump = true;
+                jumpButton.style.background = 'rgba(0, 255, 0, 0.8)';
+            }, { passive: false });
+
+            jumpButton.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                touchState.jump = false;
+                jumpButton.style.background = 'rgba(0, 255, 0, 0.5)';
+            });
+
+
+            window.addEventListener('resize', () => {
+                joystickBase = joystick.getBoundingClientRect();
+                radius = joystickBase.width / 2;
+                center = { x: joystickBase.left + radius, y: joystickBase.top + radius };
+            });
+
+            function handleJoystickStart(e) {
+                e.preventDefault();
+                handleJoystickMove(e);
+            }
+
+            function handleJoystickMove(e) {
+                e.preventDefault();
+                const touch = e.touches[0];
+                let x = touch.clientX - center.x;
+                let y = touch.clientY - center.y;
+
+                const dist = Math.min(Math.sqrt(x*x + y*y), radius);
+                const angle = Math.atan2(y, x);
+
+                const knobX = dist * Math.cos(angle);
+                const knobY = dist * Math.sin(angle);
+
+                knob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+
+                // Update touchState (normalize values from -1 to 1)
+                touchState.strafe = knobX / radius;
+                touchState.forward = -knobY / radius; // Invert Y-axis
+            }
+
+            function handleJoystickEnd() {
+                knob.style.transform = `translate(0px, 0px)`;
+                touchState.forward = 0;
+                touchState.strafe = 0;
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+            if (player && userId) updatePlayer(delta);
+
+            controls.target.lerp(player.position, 0.1);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        function updatePlayer(delta) {
+            const moveSpeed = 5.0;
+
+            const moveForward = keys.w || (touchState.forward > 0.1);
+            const moveBackward = keys.s || (touchState.forward < -0.1);
+            const moveLeft = keys.a || (touchState.strafe < -0.1);
+            const moveRight = keys.d || (touchState.strafe > 0.1);
+            const doJump = keys.space || touchState.jump;
+
+            const cameraDirection = new THREE.Vector3();
+            camera.getWorldDirection(cameraDirection);
+            cameraDirection.y = 0; cameraDirection.normalize();
+
+            const rightDirection = new THREE.Vector3().crossVectors(cameraDirection, camera.up).normalize();
+            const moveDirection = new THREE.Vector3();
+
+            if (moveForward) moveDirection.add(cameraDirection);
+            if (moveBackward) moveDirection.sub(cameraDirection);
+            if (moveLeft) moveDirection.sub(rightDirection);
+            if (moveRight) moveDirection.add(rightDirection);
+
+            moveDirection.normalize();
+
+            if (moveDirection.lengthSq() > 0.001) {
+                const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
+                const targetQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), targetAngle);
+                player.quaternion.slerp(targetQuaternion, delta * 10.0);
+            }
+
+            const moveVelocity = moveDirection.multiplyScalar(moveSpeed * delta);
+
+            // Physics
+            if (!playerPhysics.onGround) {
+                playerPhysics.velocity.y += playerPhysics.gravity * delta;
+            } else {
+                playerPhysics.velocity.y = 0;
+            }
+
+            // Jumping
+            if (doJump && playerPhysics.onGround) {
+                playerPhysics.velocity.y = playerPhysics.jumpForce;
+                playerPhysics.onGround = false;
+                touchState.jump = false;
+            }
+
+            const verticalVelocity = playerPhysics.velocity.clone().multiplyScalar(delta);
+            const prevPlayerY = player.position.y;
+            player.position.add(verticalVelocity);
+
+            const groundObject = checkVerticalCollision(prevPlayerY);
+
+            player.position.add(moveVelocity);
+            checkSideCollision(moveVelocity, groundObject);
+
+            if (keys.space) keys.space = false;
+
+        }
+
+        function checkVerticalCollision(prevPlayerY) {
+            const playerFeetY = player.position.y - playerPhysics.playerHalfHeight;
+            const playerHeadY = player.position.y + playerPhysics.playerHalfHeight;
+
+            playerPhysics.onGround = false;
+            let groundObject = null;
+            const groundY = 0.0;
+            let collisionOccurred = false;
+
+            for (const object of worldObjects) {
+                const objectBox = new THREE.Box3().setFromObject(object);
+
+                const playerBox = new THREE.Box3(
+                    new THREE.Vector3(player.position.x - playerSize.width / 2, playerFeetY, player.position.z - playerSize.depth / 2),
+                    new THREE.Vector3(player.position.x + playerSize.width / 2, playerHeadY, player.position.z + playerSize.depth / 2)
+                );
+
+                if (playerBox.intersectsBox(objectBox)) {
+                    const objectTop = objectBox.max.y;
+                    const objectBottom = objectBox.min.y;
+
+                    // 1. LANDING/DOWNWARD COLLISION
+                    if (playerPhysics.velocity.y <= 0 && prevPlayerY - playerPhysics.playerHalfHeight >= objectTop - 0.01) {
+                        if (playerFeetY < objectTop) {
+                            playerPhysics.onGround = true;
+                            playerPhysics.velocity.y = 0;
+                            player.position.y = objectTop + playerPhysics.playerHalfHeight;
+                            groundObject = object;
+                            collisionOccurred = true;
+                        }
+                    }
+
+                    // 2. UPWARD COLLISION
+                    if (playerPhysics.velocity.y > 0 && prevPlayerY + playerPhysics.playerHalfHeight <= objectBottom + 0.01) {
+                        if (playerHeadY > objectBottom) {
+                            playerPhysics.velocity.y = 0;
+                            player.position.y = objectBottom - playerPhysics.playerHalfHeight;
+                            collisionOccurred = true;
+                        }
+                    }
+                }
+            }
+
+            // --- Fallback to Baseplate/Ground (y=0) ---
+            if (!collisionOccurred && playerFeetY < groundY) {
+                 if (playerPhysics.velocity.y <= 0) {
+                    player.position.y = groundY + playerPhysics.playerHalfHeight;
+                    playerPhysics.onGround = true;
+                    playerPhysics.velocity.y = 0;
+                    groundObject = worldObjects.find(obj => obj.name === "baseplate");
+                 }
+            }
+
+            return groundObject;
+        }
+
+        function checkSideCollision(moveVelocity, groundObject) {
+            const playerFeetY = player.position.y - playerPhysics.playerHalfHeight;
+            const playerHeadY = player.position.y + playerPhysics.playerHalfHeight;
+
+            const playerBox = new THREE.Box3(
+                new THREE.Vector3(player.position.x - playerSize.width / 2, playerFeetY, player.position.z - playerSize.depth / 2),
+                new THREE.Vector3(player.position.x + playerSize.width / 2, playerHeadY, player.position.z + playerSize.depth / 2)
+            );
+
+            for (const object of worldObjects) {
+                if (object === groundObject) continue;
+
+                const objectBox = new THREE.Box3().setFromObject(object);
+
+                const horizontalPlayerBox = playerBox.clone();
+                const horizontalObjectBox = objectBox.clone();
+
+                if (horizontalPlayerBox.intersectsBox(horizontalObjectBox)) {
+                    // Collision detected while moving horizontally. Revert horizontal movement.
+                    player.position.sub(moveVelocity);
+                    break;
+                }
+            }
+        }
+    </script>
+</body>
+</html>
